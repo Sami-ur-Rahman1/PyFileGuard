@@ -1,30 +1,20 @@
-# Virtual environments
 .venv/
 venv/
-env/
-
-# Python bytecode/cache
 __pycache__/
 *.py[cod]
-*$py.class
-
-# Tests / coverage
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# Packaging
 *.egg-info/
 build/
 dist/
-
-# Editors / IDEs
+.pytest_cache/
+.coverage
+htmlcov/
+.pyfileguard-baseline.json
+*.db
+*.db-shm
+*.db-wal
 .vscode/
 .idea/
-*.swp
-*~
-
-# OS metadata
 .DS_Store
 Thumbs.db
+*~
+*.swp

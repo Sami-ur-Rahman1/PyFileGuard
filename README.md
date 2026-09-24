@@ -1,78 +1,46 @@
-# 🛡️ PyFileGuard
+# PyFileGuard v0.2.0
 
-A lightweight Python **File Integrity Monitoring (FIM)** tool for defensive security, DFIR labs, and learning. PyFileGuard creates a trusted SHA-256 baseline and detects subsequent file creation, deletion, modification, and best-effort renames.
+A lightweight Python SHA-256 File Integrity Monitoring (FIM) tool.
 
-## Features
-- Recursive directory inventory
-- SHA-256 integrity hashes
-- Detects created, deleted, and modified files
-- Best-effort rename detection using matching content hashes
-- Continuous monitoring mode
-- JSON output for automation
-- Optional baseline refresh after detected changes
-- Zero third-party runtime dependencies
+## v0.2.0
+- Numbered interactive menu (`pyfileguard`)
+- Manual path entry
+- Monitor events are no longer repeated every polling cycle
+- Timestamped monitor events
+- SQLite event history (`~/.pyfileguard/events.db`)
+- Common cache/temp files ignored by default
+- Existing CLI commands retained
+- Expanded tests
 
 ## Install
 ```bash
-python -m venv .venv
-# Linux/macOS
+python3 -m venv .venv
 source .venv/bin/activate
-# Windows: .venv\\Scripts\\activate
 pip install -e .
 ```
 
-## Usage
-Create a baseline:
+## Interactive mode
 ```bash
-pyfileguard baseline ./important-files -o baseline.json
+pyfileguard
 ```
 
-Check integrity:
+Options: Create Baseline, Check Integrity, Start Monitor Mode, View Event History, Help, Exit.
+
+## CLI
 ```bash
-pyfileguard check ./important-files -b baseline.json
+pyfileguard baseline ./files -o baseline.json
+pyfileguard check ./files -b baseline.json
+pyfileguard monitor ./files -b baseline.json --interval 5
+pyfileguard history
 ```
 
-Machine-readable output:
-```bash
-pyfileguard check ./important-files -b baseline.json --json
-```
-
-Continuous monitoring:
-```bash
-pyfileguard monitor ./important-files -b baseline.json --interval 5
-```
-
-## Example
-```text
-[MODIFIED] config/app.conf
-[CREATED] uploads/new.txt
-[RENAMED] docs/old.txt -> docs/archive.txt
-[DELETED] temp/debug.log
-```
-
-## Architecture
-`core.py` handles hashing, snapshots, persistence, and comparison. `cli.py` exposes baseline/check/monitor workflows. Baselines are portable JSON files containing relative paths, SHA-256 hashes, size, and modification metadata.
-
-## Security notes
-A baseline should be created from a directory you already trust. For meaningful monitoring, protect the baseline itself with appropriate OS permissions and ideally store a copy separately. PyFileGuard reports integrity changes; it does not automatically decide whether a change is malicious.
-
-## Roadmap
-- Ignore patterns / `.pyfileguardignore`
-- SQLite event history
-- Signed baselines
-- Email/webhook alerts
-- Rich terminal dashboard
-- HTML/CSV incident reports
-- Cross-platform service/daemon mode
-
-## Testing
+## Tests
 ```bash
 pip install pytest
 pytest -q
 ```
 
-## Responsible use
-Designed for systems and files you own or are authorized to monitor.
+An integrity alert means a file changed; it does not by itself prove malicious activity.
 
 ## License
 MIT

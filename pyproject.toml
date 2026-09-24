@@ -4,16 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyfileguard"
-version = "0.1.0"
-description = "A lightweight SHA-256 file integrity monitoring CLI for defensive security and DFIR labs."
+version = "0.2.0"
+description = "A lightweight SHA-256 file integrity monitoring tool."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Sami Ur Rahman"}]
-keywords = ["cybersecurity", "file-integrity", "dfir", "sha256", "python"]
 
 [project.scripts]
 pyfileguard = "pyfileguard.cli:main"
 
-[tool.pytest.ini_options]
-pythonpath = ["."]
+[tool.setuptools.packages.find]
+include = ["pyfileguard*"]
