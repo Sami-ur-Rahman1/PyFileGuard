@@ -1,16 +1,12 @@
-from pyfileguard.core import diff,get_events,log_changes,snapshot
-
-def test_modified(tmp_path):
- f=tmp_path/"a.txt"; f.write_text("one"); old=snapshot(tmp_path); f.write_text("two"); assert diff(old,snapshot(tmp_path))["modified"]==["a.txt"]
-
-def test_created_deleted(tmp_path):
- a=tmp_path/"a.txt"; a.write_text("a"); old=snapshot(tmp_path); a.unlink(); (tmp_path/"b.txt").write_text("b"); c=diff(old,snapshot(tmp_path)); assert c["deleted"]==["a.txt"] and c["created"]==["b.txt"]
-
-def test_rename(tmp_path):
- a=tmp_path/"a.txt"; a.write_text("same"); old=snapshot(tmp_path); a.rename(tmp_path/"b.txt"); c=diff(old,snapshot(tmp_path)); assert c["renamed"][0]["from"]=="a.txt" and c["renamed"][0]["to"]=="b.txt"
-
-def test_ignores(tmp_path):
- (tmp_path/"keep.txt").write_text("x"); (tmp_path/"temp.txt~").write_text("x"); s=snapshot(tmp_path); assert "keep.txt" in s["files"] and "temp.txt~" not in s["files"]
-
-def test_history(tmp_path):
- db=tmp_path/"e.db"; ids=log_changes(db,{"created":["x"],"deleted":[],"modified":[],"renamed":[]},tmp_path); assert ids==[1]; assert get_events(db)[0]["event_type"]=="CREATED"
+from pyfileguard.core import *
+from pyfileguard.severity import classify
+def test_created(): assert compare_snapshots({},{"a":"1"})[0].kind=="CREATED"
+def test_modified(): assert compare_snapshots({"a":"1"},{"a":"2"})[0].kind=="MODIFIED"
+def test_deleted(): assert compare_snapshots({"a":"1"},{})[0].kind=="DELETED"
+def test_rename():
+ e=compare_snapshots({"old":"x"},{"new":"x"})[0]; assert (e.kind,e.old_path,e.path)==("RENAMED","old","new")
+def test_hmac(tmp_path):
+ (tmp_path/"a").write_text("x"); b=sign_baseline(build_baseline([tmp_path]),"secret"); assert verify_baseline(b,"secret") and not verify_baseline(b,"bad")
+def test_ignore(tmp_path):
+ (tmp_path/"keep").write_text("x"); (tmp_path/"skip.log").write_text("x"); b=build_baseline([tmp_path],["*.log"]); v=next(iter(b["directories"].values())); assert "keep" in v and "skip.log" not in v
+def test_severity(): assert classify("server.conf","MODIFIED")=="HIGH"

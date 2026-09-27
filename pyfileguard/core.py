@@ -1,98 +1,73 @@
 from __future__ import annotations
-import fnmatch, hashlib, json, os, sqlite3
-from datetime import datetime, timezone
+import fnmatch, hashlib, hmac, json, os, time
+from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_IGNORES = [".git", ".git/*", ".venv", ".venv/*", "venv", "venv/*",
-"__pycache__", "*/__pycache__", "*/__pycache__/*", ".pytest_cache", ".pytest_cache/*",
-"*.pyc", "*.pyo", "*.tmp", "*.swp", "*~"]
+DEFAULT_IGNORES=[".git",".venv","venv","__pycache__",".pytest_cache","*.pyc","*.pyo","*.tmp","*.swp","*~",".DS_Store"]
 
-def utc_now():
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+@dataclass(frozen=True)
+class Event:
+    kind:str
+    path:str
+    old_path:str|None=None
+    severity:str="MEDIUM"
 
-def sha256(path, chunk_size=1024*1024):
+def sha256_file(path):
     h=hashlib.sha256()
     with Path(path).open("rb") as f:
-        for chunk in iter(lambda:f.read(chunk_size), b""): h.update(chunk)
+        for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
     return h.hexdigest()
 
-def _ignored(rel, patterns):
-    rel=rel.replace(os.sep,"/"); parts=rel.split("/")
-    for pat in patterns:
-        p=pat.replace(os.sep,"/")
-        if fnmatch.fnmatch(rel,p) or fnmatch.fnmatch(Path(rel).name,p): return True
-        if "/" not in p and p in parts: return True
-    return False
+def ignored(rel,patterns):
+    rel=rel.replace(os.sep,"/")
+    return any(fnmatch.fnmatch(rel,p) or any(fnmatch.fnmatch(part,p) for part in rel.split("/")) for p in patterns)
 
-def snapshot(root, ignore_patterns=None):
-    root=Path(root).expanduser().resolve()
-    if not root.exists(): raise FileNotFoundError(f"Directory not found: {root}")
-    if not root.is_dir(): raise NotADirectoryError(f"Not a directory: {root}")
-    patterns=list(DEFAULT_IGNORES if ignore_patterns is None else ignore_patterns)
-    out={"root":str(root),"created_at":utc_now(),"files":{},"errors":[]}
-    for p in sorted(root.rglob("*")):
-        try:
-            if not p.is_file(): continue
+def scan_directory(directory,ignores=None):
+    root=Path(directory).expanduser().resolve()
+    if not root.is_dir(): raise ValueError(f"Not a directory: {root}")
+    pats=DEFAULT_IGNORES+list(ignores or [])
+    out={}
+    for p in root.rglob("*"):
+        if p.is_file():
             rel=p.relative_to(root).as_posix()
-            if _ignored(rel,patterns): continue
-            st=p.stat()
-            out["files"][rel]={"sha256":sha256(p),"size":st.st_size,"mtime_ns":st.st_mtime_ns}
-        except (OSError,PermissionError) as e:
-            out["errors"].append({"path":str(p),"error":str(e)})
+            if not ignored(rel,pats):
+                try: out[rel]=sha256_file(p)
+                except OSError: pass
     return out
 
-def diff(old,new):
-    a,b=old.get("files",{}),new.get("files",{})
-    ap,bp=set(a),set(b)
-    created=sorted(bp-ap); deleted=sorted(ap-bp)
-    modified=sorted(p for p in ap&bp if a[p].get("sha256")!=b[p].get("sha256"))
-    byhash={}
-    for p in created: byhash.setdefault(b[p]["sha256"],[]).append(p)
-    renamed=[]; uc=set(); ud=set()
-    for op in deleted:
-        target=next((p for p in byhash.get(a[op]["sha256"],[]) if p not in uc),None)
-        if target:
-            renamed.append({"from":op,"to":target,"sha256":a[op]["sha256"]}); uc.add(target); ud.add(op)
-    return {"created":[p for p in created if p not in uc],
-            "deleted":[p for p in deleted if p not in ud],
-            "modified":modified,"renamed":renamed}
+def build_baseline(directories,ignores=None):
+    roots=[str(Path(d).expanduser().resolve()) for d in directories]
+    return {"format":2,"created_at":int(time.time()),"directories":{r:scan_directory(r,ignores) for r in roots},"ignores":list(ignores or [])}
 
-def has_changes(c): return any(c.get(k) for k in ("created","deleted","modified","renamed"))
+def payload(b):
+    x=dict(b); x.pop("integrity",None)
+    return json.dumps(x,sort_keys=True,separators=(",",":")).encode()
 
-def save_json(data,path):
-    p=Path(path).expanduser(); p.parent.mkdir(parents=True,exist_ok=True)
-    p.write_text(json.dumps(data,indent=2),encoding="utf-8")
+def sign_baseline(b,key):
+    x=dict(b); x["integrity"]={"algorithm":"HMAC-SHA256","digest":hmac.new(key.encode(),payload(b),hashlib.sha256).hexdigest()}; return x
 
-def load_json(path): return json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+def verify_baseline(b,key):
+    expected=(b.get("integrity") or {}).get("digest")
+    return bool(expected) and hmac.compare_digest(expected,hmac.new(key.encode(),payload(b),hashlib.sha256).hexdigest())
 
-def format_events(c):
-    e=[("CREATED",p,None) for p in c.get("created",[])]
-    e += [("DELETED",p,None) for p in c.get("deleted",[])]
-    e += [("MODIFIED",p,None) for p in c.get("modified",[])]
-    e += [("RENAMED",r["from"],r["to"]) for r in c.get("renamed",[])]
-    return e
+def save_baseline(b,path):
+    p=Path(path).expanduser(); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(b,indent=2),encoding="utf-8")
 
-def init_db(db):
-    p=Path(db).expanduser(); p.parent.mkdir(parents=True,exist_ok=True)
-    with sqlite3.connect(p) as con:
-        con.execute("""CREATE TABLE IF NOT EXISTS events(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,timestamp TEXT NOT NULL,event_type TEXT NOT NULL,
-        path TEXT NOT NULL,new_path TEXT,monitored_root TEXT NOT NULL)""")
+def load_baseline(path): return json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
 
-def log_changes(db,c,root):
-    init_db(db); ids=[]
-    with sqlite3.connect(Path(db).expanduser()) as con:
-        for kind,path,new_path in format_events(c):
-            cur=con.execute("INSERT INTO events(timestamp,event_type,path,new_path,monitored_root) VALUES(?,?,?,?,?)",
-                (utc_now(),kind,path,new_path,str(Path(root).expanduser().resolve())))
-            ids.append(cur.lastrowid)
-    return ids
+def compare_snapshots(old,new):
+    deleted={p:h for p,h in old.items() if p not in new}; created={p:h for p,h in new.items() if p not in old}
+    events=[]; used=set()
+    for op,oh in sorted(deleted.items()):
+        match=next((p for p,h in sorted(created.items()) if p not in used and h==oh),None)
+        if match: events.append(Event("RENAMED",match,op)); used.add(match)
+        else: events.append(Event("DELETED",op))
+    events += [Event("CREATED",p) for p in sorted(created) if p not in used]
+    events += [Event("MODIFIED",p) for p in sorted(old.keys()&new.keys()) if old[p]!=new[p]]
+    return events
 
-def get_events(db,limit=50):
-    p=Path(db).expanduser()
-    if not p.exists(): return []
-    init_db(p)
-    with sqlite3.connect(p) as con:
-        con.row_factory=sqlite3.Row
-        rows=con.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
-    return [dict(r) for r in rows]
+def compare_baseline(b,ignores=None):
+    merged=list(b.get("ignores",[]))+list(ignores or []); out=[]
+    for root,old in b.get("directories",{}).items():
+        out += [(root,e) for e in compare_snapshots(old,scan_directory(root,merged))]
+    return out

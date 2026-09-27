@@ -1,18 +1,15 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
+requires=["setuptools>=68"]
+build-backend="setuptools.build_meta"
 [project]
-name = "pyfileguard"
-version = "0.2.0"
-description = "A lightweight SHA-256 file integrity monitoring tool."
-readme = "README.md"
-requires-python = ">=3.10"
-license = {text = "MIT"}
-authors = [{name = "Sami Ur Rahman"}]
-
+name="pyfileguard"
+version="0.3.0"
+description="SHA-256 file integrity monitoring by FortiX CyberTech"
+readme="README.md"
+requires-python=">=3.10"
+license={text="MIT"}
+authors=[{name="Sami Ur Rahman"}]
 [project.scripts]
-pyfileguard = "pyfileguard.cli:main"
-
-[tool.setuptools.packages.find]
-include = ["pyfileguard*"]
+pyfileguard="pyfileguard.cli:main"
+[tool.pytest.ini_options]
+testpaths=["tests"]
