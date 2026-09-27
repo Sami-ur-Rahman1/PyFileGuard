@@ -1,2 +1,2 @@
-"""PyFileGuard - lightweight file integrity monitoring."""
-__version__ = "0.2.0"
+"""PyFileGuard by FortiX CyberTech."""
+__version__="0.3.0"
